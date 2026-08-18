@@ -1,0 +1,6 @@
+server/.env
+server/node_modules/
+tenant_app/.dart_tool/
+tenant_app/build/
+landlord_app/.dart_tool/
+landlord_app/build/

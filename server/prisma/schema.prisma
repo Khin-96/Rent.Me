@@ -1,0 +1,178 @@
+// This is your Prisma schema file for SQLite
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String
+  role              String   @default("TENANT") // TENANT, LANDLORD, ADMIN
+  name              String
+  phone             String?
+  avatarUrl         String?
+  isVerified        Boolean  @default(false)
+  verificationBadge Boolean  @default(false)
+  isSuspended       Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  properties        Property[]
+  favorites         Favorite[]
+  sentInquiries     Inquiry[]    @relation("TenantInquiries")
+  receivedInquiries Inquiry[]    @relation("LandlordInquiries")
+  messages          Message[]
+  reports           Report[]
+  verifications     VerificationRecord[]
+
+  @@map("users")
+}
+
+model Property {
+  id            String         @id @default(cuid())
+  landlordId    String
+  landlord      User           @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  type          String         // BEDSITTER, STUDIO, ONE_BED, TWO_BED, THREE_BED_PLUS
+  latitude      Float
+  longitude     Float
+  address       String
+  neighbourhood String?
+  city          String         @default("Nairobi")
+  rentAmount    Int
+  depositAmount Int?
+  bedrooms      Int?
+  bathrooms     Int?
+  size          Float?
+  status        String         @default("AVAILABLE") // AVAILABLE, OCCUPIED, PAUSED
+  availableFrom DateTime?
+  isVerified    Boolean        @default(false)
+  amenities     String         @default("") // Comma-separated list of amenities, e.g., "WATER,PARKING"
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  images        PropertyImage[]
+  videos        PropertyVideo[]
+  units         PropertyUnit[]
+  favorites     Favorite[]
+  inquiries     Inquiry[]
+  reports       Report[]
+
+  @@map("properties")
+}
+
+model PropertyImage {
+  id                 String   @id @default(cuid())
+  propertyId         String
+  property           Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  cloudinaryPublicId String
+  cloudinaryUrl      String
+  thumbnailUrl       String?
+  isCover            Boolean  @default(false)
+  order              Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  @@map("property_images")
+}
+
+model PropertyVideo {
+  id                 String   @id @default(cuid())
+  propertyId         String
+  property           Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  cloudinaryPublicId String
+  cloudinaryUrl      String
+  thumbnailUrl       String?
+  createdAt          DateTime @default(now())
+
+  @@map("property_videos")
+}
+
+model PropertyUnit {
+  id             String   @id @default(cuid())
+  propertyId     String
+  property       Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  type           String
+  totalCount     Int
+  availableCount Int
+  rentAmount     Int
+
+  @@map("property_units")
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     User     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, propertyId])
+  @@map("favorites")
+}
+
+model Inquiry {
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           User     @relation("TenantInquiries", fields: [tenantId], references: [id], onDelete: Cascade)
+  landlordId       String
+  landlord         User     @relation("LandlordInquiries", fields: [landlordId], references: [id], onDelete: Cascade)
+  propertyId       String
+  property         Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  subject          String
+  status           String   @default("OPEN") // OPEN, RESPONDED, CLOSED
+  isReadByLandlord Boolean  @default(false)
+  isReadByTenant   Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  messages         Message[]
+
+  @@map("inquiries")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  inquiryId String
+  inquiry   Inquiry  @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}
+
+model Report {
+  id          String    @id @default(cuid())
+  reporterId  String
+  reporter    User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  propertyId  String
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reason      String    // PROPERTY_DOES_NOT_EXIST, WRONG_LOCATION, etc.
+  description String?
+  status      String    @default("PENDING") // PENDING, REVIEWED, RESOLVED, DISMISSED
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("reports")
+}
+
+model VerificationRecord {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String
+  status     String    @default("PENDING")
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("verification_records")
+}
