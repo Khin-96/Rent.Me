@@ -1,9 +1,9 @@
 require('dotenv').config();
 const app = require('./app');
 
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 10000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`[HabitatHub Server] Running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
 

@@ -4,3 +4,7 @@ tenant_app/.dart_tool/
 tenant_app/build/
 landlord_app/.dart_tool/
 landlord_app/build/
+landlord_app/android/key.properties
+landlord_app/android/*.jks
+tenant_app/android/key.properties
+tenant_app/android/*.jks

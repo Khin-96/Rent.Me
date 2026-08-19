@@ -63,7 +63,12 @@ async function getTraffic(req, res, next) {
     }
 
     const data = await response.json();
-    const responseData = data && typeof data === 'object' ? data : { data };
+    const responseData =
+      data && typeof data === 'object' && data.data && typeof data.data === 'object'
+        ? data.data
+        : data && typeof data === 'object'
+            ? data
+            : { data };
     trafficCache.set(cacheKey, {
       data: responseData,
       expiresAt: Date.now() + CACHE_TTL_MS,

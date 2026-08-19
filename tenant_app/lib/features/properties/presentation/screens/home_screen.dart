@@ -400,7 +400,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               TileLayer(
                 urlTemplate: AppConstants.osmTileUrl,
-                userAgentPackageName: 'com.rentme.tenant',
+                userAgentPackageName: 'com.rentalmarket.tenant.tenant_app',
               ),
               MarkerLayer(
                 markers: _trafficIncidents.map((incident) {

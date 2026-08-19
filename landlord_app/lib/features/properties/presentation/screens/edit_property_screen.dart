@@ -412,8 +412,10 @@ class _EditPropertyScreenState extends ConsumerState<EditPropertyScreen> {
                   ),
                   children: [
                     TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                      urlTemplate: AppConstants.osmTileUrl,
+                      userAgentPackageName:
+                          'com.rentalmarket.landlord.landlord_app',
+                    ),
                     if (_location != null)
                       MarkerLayer(markers: [
                         Marker(

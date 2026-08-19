@@ -611,8 +611,10 @@ class _Step3Location extends StatelessWidget {
                 ),
                 children: [
                   TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                    urlTemplate: AppConstants.osmTileUrl,
+                    userAgentPackageName:
+                        'com.rentalmarket.landlord.landlord_app',
+                  ),
                   if (pickedLocation != null)
                     MarkerLayer(
                       markers: [

@@ -1,5 +1,5 @@
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
+const { cloudinary, isCloudinaryConfigured } = require('../lib/cloudinary_config');
 
 // Multer memory storage configuration for videos
 const storage = multer.memoryStorage();
@@ -14,21 +14,6 @@ const upload = multer({
     }
   },
 });
-
-// Configure Cloudinary
-const isCloudinaryConfigured =
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name' &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_KEY !== 'your_api_key';
-
-if (isCloudinaryConfigured) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  });
-}
 
 // Realistic mock video URLs
 const mockPropertyVideos = [
@@ -81,6 +66,13 @@ const uploadVideo = async (req, res, next) => {
       thumbnailUrl: thumbnailUrl,
     });
   } catch (error) {
+    if (error.message && /invalid signature/i.test(error.message)) {
+      const credentialError = new Error(
+        'Cloudinary rejected the upload signature. Check the Cloudinary cloud name, API key, and API secret in the server environment.',
+      );
+      credentialError.status = 502;
+      return next(credentialError);
+    }
     next(error);
   }
 };
