@@ -1,7 +1,7 @@
 name: landlord_app
 description: The landlord dashboard and property management app for HabitatHub.
 publish_to: 'none'
-version: 1.0.2+3
+version: 1.0.2+4
 
 environment:
   sdk: '>=3.4.0 <4.0.0'

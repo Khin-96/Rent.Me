@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/api/dio_client.dart';
@@ -59,19 +60,111 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     }
   }
 
-  Future<void> _getDirections(PropertyModel property) async {
+  Future<void> _openExternalDirections(PropertyModel property) async {
     final googleMapsUrl = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=${property.latitude},${property.longitude}',
+      'https://www.google.com/maps/dir/?api=1&destination=${property.latitude},${property.longitude}',
     );
-    if (await canLaunchUrl(googleMapsUrl)) {
-      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-    } else {
+    try {
+      final launched = await launchUrl(
+        googleMapsUrl,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open map application')),
+        );
+      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not open map application')),
         );
       }
     }
+  }
+
+  void _openInAppMap(PropertyModel property) {
+    context.go(
+      '/?lat=${property.latitude}&lng=${property.longitude}&id=${property.id}',
+    );
+  }
+
+  void _getDirections(PropertyModel property) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.gray200,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'Directions to Property',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                property.name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: AppColors.gray600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.navigation_rounded, color: AppColors.primary),
+                ),
+                title: const Text('Turn-by-Turn Navigation',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Open in Google Maps / Navigation app'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openExternalDirections(property);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.map_rounded, color: AppColors.primary),
+                ),
+                title: const Text('View on In-App Map',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Locate property and explore nearby area'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openInAppMap(property);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override

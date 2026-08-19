@@ -43,7 +43,16 @@ class _TrafficIncident {
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final double? destinationLat;
+  final double? destinationLng;
+  final String? destinationPropertyId;
+
+  const HomeScreen({
+    super.key,
+    this.destinationLat,
+    this.destinationLng,
+    this.destinationPropertyId,
+  });
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -71,9 +80,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _getUserLocationAndFetch();
+      _initHomeScreen();
       ref.read(favoritesProvider.notifier).fetchFavorites();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.destinationLat != null &&
+        widget.destinationLng != null &&
+        (widget.destinationLat != oldWidget.destinationLat ||
+            widget.destinationLng != oldWidget.destinationLng ||
+            widget.destinationPropertyId != oldWidget.destinationPropertyId)) {
+      _navigateToDestination();
+    }
+  }
+
+  Future<void> _initHomeScreen() async {
+    if (widget.destinationLat != null && widget.destinationLng != null) {
+      await _navigateToDestination();
+    } else {
+      await _getUserLocationAndFetch();
+    }
+  }
+
+  Future<void> _navigateToDestination() async {
+    final lat = widget.destinationLat!;
+    final lng = widget.destinationLng!;
+    final destLatLng = LatLng(lat, lng);
+    _mapController.move(destLatLng, 15.5);
+
+    await ref.read(propertiesProvider.notifier).fetchProperties(
+          minLat: lat - 0.05,
+          maxLat: lat + 0.05,
+          minLng: lng - 0.05,
+          maxLng: lng + 0.05,
+        );
+
+    if (widget.destinationPropertyId != null) {
+      final properties = ref.read(propertiesProvider).properties;
+      final matched = properties.where((p) => p.id == widget.destinationPropertyId).toList();
+      if (matched.isNotEmpty) {
+        ref.read(propertiesProvider.notifier).selectProperty(matched.first);
+      }
+    }
+    _fetchTraffic(_mapController.camera.visibleBounds);
   }
 
   @override

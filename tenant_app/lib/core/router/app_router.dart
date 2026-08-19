@@ -39,7 +39,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/',
-            builder: (context, state) => const HomeScreen(),
+            builder: (context, state) {
+              final latStr = state.uri.queryParameters['lat'];
+              final lngStr = state.uri.queryParameters['lng'];
+              final propertyId = state.uri.queryParameters['id'] ?? state.uri.queryParameters['propertyId'];
+              final lat = latStr != null ? double.tryParse(latStr) : null;
+              final lng = lngStr != null ? double.tryParse(lngStr) : null;
+              return HomeScreen(
+                destinationLat: lat,
+                destinationLng: lng,
+                destinationPropertyId: propertyId,
+              );
+            },
           ),
           GoRoute(
             path: '/saved',
