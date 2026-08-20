@@ -1,0 +1,2 @@
+cd C:\Users\ADMIN\Desktop\HH\landlord_app
+flutter build appbundle --release --dart-define=API_BASE_URL=https://rent-me-6k76.onrender.com

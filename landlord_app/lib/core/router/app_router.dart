@@ -74,16 +74,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             const MaterialPage(child: LandlordMessagesScreen()),
       ),
       GoRoute(
-        path: '/messages/:userId',
+        path: '/messages/:id',
         pageBuilder: (context, state) {
-          final userId = state.pathParameters['userId']!;
-          final propertyId = state.uri.queryParameters['propertyId'];
-          final name = state.uri.queryParameters['name'];
+          final id = state.pathParameters['id']!;
           return MaterialPage(
             child: LandlordThreadScreen(
-              otherUserId: userId,
-              propertyId: propertyId?.isEmpty == true ? null : propertyId,
-              otherUserName: name,
+              inquiryId: id,
             ),
           );
         },

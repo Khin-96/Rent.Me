@@ -43,12 +43,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               final latStr = state.uri.queryParameters['lat'];
               final lngStr = state.uri.queryParameters['lng'];
               final propertyId = state.uri.queryParameters['id'] ?? state.uri.queryParameters['propertyId'];
+              final autoRoute = state.uri.queryParameters['route'] == 'true';
               final lat = latStr != null ? double.tryParse(latStr) : null;
               final lng = lngStr != null ? double.tryParse(lngStr) : null;
               return HomeScreen(
                 destinationLat: lat,
                 destinationLng: lng,
                 destinationPropertyId: propertyId,
+                autoRoute: autoRoute,
               );
             },
           ),

@@ -38,36 +38,148 @@ class TenantShell extends StatelessWidget {
 
     return Scaffold(
       body: child,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(
-            top: BorderSide(color: AppColors.gray200, width: 1),
-          ),
+      bottomNavigationBar: _PremiumNavBar(
+        selectedIndex: selectedIndex,
+        onItemTapped: (i) => _onItemTapped(i, context),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+  });
+}
+
+const _navItems = [
+  _NavItem(
+    icon: Icons.map_outlined,
+    activeIcon: Icons.map_rounded,
+    label: 'Explore',
+  ),
+  _NavItem(
+    icon: Icons.bookmark_border_rounded,
+    activeIcon: Icons.bookmark_rounded,
+    label: 'Saved',
+  ),
+  _NavItem(
+    icon: Icons.inbox_outlined,
+    activeIcon: Icons.inbox_rounded,
+    label: 'Inbox',
+  ),
+  _NavItem(
+    icon: Icons.person_outline_rounded,
+    activeIcon: Icons.person_rounded,
+    label: 'Profile',
+  ),
+];
+
+class _PremiumNavBar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onItemTapped;
+
+  const _PremiumNavBar({
+    required this.selectedIndex,
+    required this.onItemTapped,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      color: Colors.transparent,
+      child: Container(
+        margin: EdgeInsets.fromLTRB(20, 0, 20, bottomInset + 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: BottomNavigationBar(
-          currentIndex: selectedIndex,
-          onTap: (index) => _onItemTapped(index, context),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.explore_outlined),
-              activeIcon: Icon(Icons.explore),
-              label: 'Explore',
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(_navItems.length, (index) {
+            final item = _navItems[index];
+            final isSelected = index == selectedIndex;
+            return _NavTile(
+              item: item,
+              isSelected: isSelected,
+              onTap: () => onItemTapped(index),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  final _NavItem item;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _NavTile({
+    required this.item,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        padding: EdgeInsets.symmetric(
+          horizontal: isSelected ? 18 : 14,
+          vertical: 8,
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected ? item.activeIcon : item.icon,
+              size: 20,
+              color: isSelected ? AppColors.white : AppColors.gray500,
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.favorite_border_rounded),
-              activeIcon: Icon(Icons.favorite_rounded),
-              label: 'Saved',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline_rounded),
-              activeIcon: Icon(Icons.chat_bubble_rounded),
-              label: 'Inbox',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline_rounded),
-              activeIcon: Icon(Icons.person_rounded),
-              label: 'Profile',
-            ),
+            if (isSelected) ...[
+              const SizedBox(width: 6),
+              Text(
+                item.label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.white,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
           ],
         ),
       ),

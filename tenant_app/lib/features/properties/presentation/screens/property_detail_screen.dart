@@ -9,6 +9,7 @@ import '../../data/property_model.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../favorites/presentation/providers/favorites_provider.dart';
 import '../../../messaging/presentation/providers/inbox_provider.dart';
+import '../../../../core/services/nearby_places_service.dart';
 
 class PropertyDetailScreen extends ConsumerStatefulWidget {
   final String propertyId;
@@ -24,6 +25,8 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
   PropertyModel? _property;
   bool _loading = true;
   String? _error;
+  bool _nearbyLoading = false;
+  List<PlaceModel> _nearbyPlaces = const [];
 
   @override
   void initState() {
@@ -37,10 +40,12 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
       final response = await dio.get('/properties/${widget.propertyId}');
       if (response.statusCode == 200) {
         if (mounted) {
+          final property = PropertyModel.fromJson(response.data);
           setState(() {
-            _property = PropertyModel.fromJson(response.data);
+            _property = property;
             _loading = false;
           });
+          _fetchNearbyPlaces(property);
         }
       }
     } on DioException catch (e) {
@@ -58,6 +63,20 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
         });
       }
     }
+  }
+
+  Future<void> _fetchNearbyPlaces(PropertyModel property) async {
+    if (!mounted) return;
+    setState(() => _nearbyLoading = true);
+    final places = await NearbyPlacesService.fetchNearby(
+      lat: property.latitude,
+      lng: property.longitude,
+    );
+    if (!mounted) return;
+    setState(() {
+      _nearbyPlaces = places;
+      _nearbyLoading = false;
+    });
   }
 
   Future<void> _openExternalDirections(PropertyModel property) async {
@@ -83,88 +102,14 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
     }
   }
 
-  void _openInAppMap(PropertyModel property) {
+  void _openInAppMap(PropertyModel property, {bool route = true}) {
     context.go(
-      '/?lat=${property.latitude}&lng=${property.longitude}&id=${property.id}',
+      '/?lat=${property.latitude}&lng=${property.longitude}&id=${property.id}&route=$route',
     );
   }
 
   void _getDirections(PropertyModel property) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.gray200,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Text(
-                'Directions to Property',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                property.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: AppColors.gray600),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.navigation_rounded, color: AppColors.primary),
-                ),
-                title: const Text('Turn-by-Turn Navigation',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Open in Google Maps / Navigation app'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openExternalDirections(property);
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.map_rounded, color: AppColors.primary),
-                ),
-                title: const Text('View on In-App Map',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text('Locate property and explore nearby area'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openInAppMap(property);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    _openInAppMap(property, route: true);
   }
 
   @override
@@ -377,6 +322,44 @@ class _PropertyDetailScreenState extends ConsumerState<PropertyDetailScreen> {
                       );
                     }).toList(),
                   ),
+                  if (_nearbyLoading || _nearbyPlaces.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      'Nearby Places',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_nearbyLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LinearProgressIndicator(
+                          color: AppColors.primary,
+                          backgroundColor: AppColors.gray200,
+                        ),
+                      )
+                    else
+                      ..._nearbyPlaces.take(6).map(
+                            (place) => ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              leading: const Icon(
+                                Icons.place_outlined,
+                                color: AppColors.primary,
+                              ),
+                              title: Text(place.name),
+                              subtitle: Text(place.categoryLabel),
+                              trailing: Text(
+                                '${place.distanceM.round()} m',
+                                style: const TextStyle(
+                                  color: AppColors.gray600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ],
                   const SizedBox(height: 24),
                   if (property.landlord != null) ...[
                     const Divider(),

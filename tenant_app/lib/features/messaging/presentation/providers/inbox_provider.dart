@@ -65,8 +65,13 @@ class InboxNotifier extends StateNotifier<InboxState> {
     }
   }
 
-  Future<void> fetchMessages(String inquiryId) async {
-    state = state.copyWith(isLoading: true, error: null);
+  Future<void> fetchMessages(
+    String inquiryId, {
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
     try {
       final dio = _ref.read(dioProvider);
       final response = await dio.get('/inquiries/$inquiryId/messages');

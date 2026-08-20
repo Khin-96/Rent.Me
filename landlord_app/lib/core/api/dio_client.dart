@@ -20,6 +20,10 @@ final dioProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
+        if (!options.path.startsWith('http') &&
+            options.path.startsWith('/')) {
+          options.path = options.path.substring(1);
+        }
         final secureStorage = ref.read(secureStorageProvider);
         final token = await secureStorage.read(key: 'auth_token');
         if (token != null) {

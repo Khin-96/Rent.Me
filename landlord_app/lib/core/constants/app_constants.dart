@@ -8,9 +8,13 @@ class AppConstants {
 
   static String get baseUrl {
     if (_configuredApiUrl.isNotEmpty) {
-      return _configuredApiUrl.endsWith('/api')
-          ? _configuredApiUrl
-          : '$_configuredApiUrl/api';
+      final configuredUrl = _configuredApiUrl.trim().replaceFirst(
+            RegExp(r'/+$'),
+            '',
+          );
+      return configuredUrl.endsWith('/api')
+          ? configuredUrl
+          : '$configuredUrl/api';
     }
     return kIsWeb ? 'http://localhost:5000/api' : 'http://10.0.2.2:5000/api';
   }

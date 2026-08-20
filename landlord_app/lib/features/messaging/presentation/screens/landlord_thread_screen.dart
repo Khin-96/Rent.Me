@@ -6,15 +6,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../providers/inbox_provider.dart';
 
 class LandlordThreadScreen extends ConsumerStatefulWidget {
-  final String otherUserId;
-  final String? propertyId;
-  final String? otherUserName;
+  final String inquiryId;
 
   const LandlordThreadScreen({
     super.key,
-    required this.otherUserId,
-    this.propertyId,
-    this.otherUserName,
+    required this.inquiryId,
   });
 
   @override
@@ -24,6 +20,14 @@ class LandlordThreadScreen extends ConsumerStatefulWidget {
 class _LandlordThreadScreenState extends ConsumerState<LandlordThreadScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(inboxProvider.notifier).fetchMessages(widget.inquiryId);
+    });
+  }
 
   @override
   void dispose() {
@@ -48,15 +52,17 @@ class _LandlordThreadScreenState extends ConsumerState<LandlordThreadScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
     _messageController.clear();
-    final args = (userId: widget.otherUserId, propertyId: widget.propertyId);
-    await ref.read(threadProviderFamily(args).notifier).sendMessage(text);
-    _scrollToBottom();
+    final success = await ref.read(inboxProvider.notifier).sendMessage(widget.inquiryId, text);
+    if (success) {
+      _scrollToBottom();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final args = (userId: widget.otherUserId, propertyId: widget.propertyId);
-    final state = ref.watch(threadProviderFamily(args));
+    final state = ref.watch(inboxProvider);
+    final inquiry = state.activeInquiry;
+    final messages = state.messages;
     final currentUserId = ref.read(prefsProvider).getString('user_id');
 
     _scrollToBottom();
@@ -70,42 +76,50 @@ class _LandlordThreadScreenState extends ConsumerState<LandlordThreadScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.otherUserName ?? 'Tenant',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            if (widget.propertyId != null)
-              Text('Property inquiry',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.gray400)),
+            Text(
+              inquiry?.tenant?.name ?? 'Tenant Inquiry',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            if (inquiry?.property != null)
+              Text(
+                inquiry!.property!.name,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w500),
+              ),
           ],
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => ref.read(threadProviderFamily(args).notifier).fetchMessages(),
+            onPressed: () => ref.read(inboxProvider.notifier).fetchMessages(widget.inquiryId),
           ),
         ],
       ),
       body: Column(
         children: [
           Expanded(
-            child: state.isLoading
+            child: state.isLoading && messages.isEmpty
                 ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                : state.messages.isEmpty
+                : messages.isEmpty
                     ? Center(
-                        child: Text('No messages yet. Start the conversation.',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: AppColors.gray400)))
+                        child: Text(
+                          'No messages in this conversation yet.',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.gray400),
+                        ),
+                      )
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(16),
-                        itemCount: state.messages.length,
+                        itemCount: messages.length,
                         itemBuilder: (context, index) {
-                          final msg = state.messages[index];
+                          final msg = messages[index];
                           final isMine = msg.senderId == currentUserId;
-                          return _MessageBubble(content: msg.content, isMine: isMine, time: msg.createdAt)
+                          return _MessageBubble(
+                            content: msg.body,
+                            isMine: isMine,
+                            time: msg.createdAt,
+                          )
                               .animate(delay: Duration(milliseconds: index * 20))
-                              .slideY(begin: 0.1, duration: 250.ms)
+                              .slideY(begin: 0.1, duration: 200.ms)
                               .fadeIn();
                         },
                       ),
@@ -135,7 +149,7 @@ class _MessageBubble extends StatelessWidget {
       child: Align(
         alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -146,22 +160,32 @@ class _MessageBubble extends StatelessWidget {
                 bottomLeft: Radius.circular(isMine ? 18 : 4),
                 bottomRight: Radius.circular(isMine ? 4 : 18),
               ),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4)],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                Text(content,
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: isMine ? AppColors.white : AppColors.gray800,
-                        height: 1.4)),
+                Text(
+                  content,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isMine ? AppColors.white : AppColors.gray800,
+                    height: 1.4,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                      fontSize: 10,
-                      color: isMine ? AppColors.white.withOpacity(0.6) : AppColors.gray400),
+                    fontSize: 10,
+                    color: isMine ? AppColors.white.withValues(alpha: 0.7) : AppColors.gray400,
+                  ),
                 ),
               ],
             ),
@@ -193,18 +217,21 @@ class _InputBar extends StatelessWidget {
               maxLines: 4,
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
-                hintText: 'Type a message...',
+                hintText: 'Type a reply...',
                 filled: true,
                 fillColor: AppColors.gray50,
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(color: AppColors.gray200)),
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppColors.gray200),
+                ),
                 enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide(color: AppColors.gray200)),
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppColors.gray200),
+                ),
                 focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: const BorderSide(color: AppColors.primary)),
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
             ),
@@ -217,11 +244,17 @@ class _InputBar extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                  color: isSending ? AppColors.gray300 : AppColors.primary, shape: BoxShape.circle),
+                color: isSending ? AppColors.gray300 : AppColors.primary,
+                shape: BoxShape.circle,
+              ),
               child: isSending
                   ? const Center(
                       child: SizedBox(
-                          width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white)))
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+                      ),
+                    )
                   : const Icon(Icons.send_rounded, color: AppColors.white, size: 20),
             ),
           ),

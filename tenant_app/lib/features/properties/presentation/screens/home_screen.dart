@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart' as vt;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,7 @@ import '../../../../core/providers/shared_providers.dart';
 import '../widgets/property_card.dart';
 import '../../../../core/utils/formatters.dart';
 import '../providers/properties_provider.dart';
+import '../providers/route_state.dart';
 import '../../../favorites/presentation/providers/favorites_provider.dart';
 
 class _LocationSuggestion {
@@ -46,12 +48,14 @@ class HomeScreen extends ConsumerStatefulWidget {
   final double? destinationLat;
   final double? destinationLng;
   final String? destinationPropertyId;
+  final bool autoRoute;
 
   const HomeScreen({
     super.key,
     this.destinationLat,
     this.destinationLng,
     this.destinationPropertyId,
+    this.autoRoute = false,
   });
 
   @override
@@ -62,6 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
   final Dio _geocoder = Dio();
+  vt.Style? _mapStyle;
   Timer? _mapFetchDebounce;
   Timer? _suggestionDebounce;
   List<_LocationSuggestion> _suggestions = const [];
@@ -70,6 +75,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _lastMapBoundsKey;
   String? _lastTrafficBoundsKey;
   DateTime? _lastTrafficFetch;
+
+  // In-App Turn-by-Turn Route State
+  List<LatLng> _routePoints = [];
+  double? _routeDistanceKm;
+  double? _routeDurationMin;
+  bool _isLoadingRoute = false;
+  LatLng? _userLocation;
+  LatLng? _routeDestination;
+  TravelMode _selectedTravelMode = TravelMode.driving;
 
   // Filters State
   String _selectedType = 'ALL';
@@ -80,9 +94,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadMapStyle();
       _initHomeScreen();
       ref.read(favoritesProvider.notifier).fetchFavorites();
     });
+  }
+
+  Future<void> _loadMapStyle() async {
+    try {
+      final style = await vt.StyleReader(
+        uri: AppConstants.openFreeMapStyleUrl,
+      ).read();
+      if (!mounted) {
+        style.dispose();
+        return;
+      }
+      setState(() => _mapStyle = style);
+    } catch (_) {
+      // Keep the raster fallback layer visible if the style is unavailable.
+    }
   }
 
   @override
@@ -92,16 +122,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         widget.destinationLng != null &&
         (widget.destinationLat != oldWidget.destinationLat ||
             widget.destinationLng != oldWidget.destinationLng ||
-            widget.destinationPropertyId != oldWidget.destinationPropertyId)) {
+            widget.destinationPropertyId != oldWidget.destinationPropertyId ||
+            widget.autoRoute != oldWidget.autoRoute)) {
       _navigateToDestination();
     }
   }
 
   Future<void> _initHomeScreen() async {
+    await _getUserLocation();
     if (widget.destinationLat != null && widget.destinationLng != null) {
       await _navigateToDestination();
     } else {
-      await _getUserLocationAndFetch();
+      await _fetchPropertiesForCurrentLocation();
+    }
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        final position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high);
+        final loc = LatLng(position.latitude, position.longitude);
+        _userLocation = loc;
+        final prefs = ref.read(sharedPreferencesProvider);
+        await prefs.setDouble('user_lat', position.latitude);
+        await prefs.setDouble('user_lng', position.longitude);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchPropertiesForCurrentLocation() async {
+    if (_userLocation != null) {
+      _mapController.move(_userLocation!, AppConstants.defaultZoom);
+      ref.read(propertiesProvider.notifier).fetchProperties(
+            minLat: _userLocation!.latitude - 0.05,
+            maxLat: _userLocation!.latitude + 0.05,
+            minLng: _userLocation!.longitude - 0.05,
+            maxLng: _userLocation!.longitude + 0.05,
+          );
+      _fetchTraffic(_mapController.camera.visibleBounds);
+    } else {
+      ref.read(propertiesProvider.notifier).fetchProperties();
+      _fetchTraffic(_mapController.camera.visibleBounds);
     }
   }
 
@@ -109,7 +176,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final lat = widget.destinationLat!;
     final lng = widget.destinationLng!;
     final destLatLng = LatLng(lat, lng);
-    _mapController.move(destLatLng, 15.5);
 
     await ref.read(propertiesProvider.notifier).fetchProperties(
           minLat: lat - 0.05,
@@ -125,7 +191,156 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(propertiesProvider.notifier).selectProperty(matched.first);
       }
     }
+
+    if (widget.autoRoute) {
+      await _fetchRoute(destLatLng);
+    } else {
+      _mapController.move(destLatLng, 15.5);
+    }
+
     _fetchTraffic(_mapController.camera.visibleBounds);
+  }
+
+  Future<void> _fetchRoute(
+    LatLng destination, {
+    TravelMode mode = TravelMode.driving,
+  }) async {
+    if (_userLocation == null) {
+      await _getUserLocation();
+    }
+    final start = _userLocation ?? const LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
+
+    _routeDestination = destination;
+    setState(() {
+      _isLoadingRoute = true;
+    });
+
+    await ref.read(routeProvider.notifier).fetchRoute(
+          start: start,
+          destination: destination,
+          mode: mode,
+        );
+    if (!mounted) return;
+
+    final route = ref.read(routeProvider).activeRoute;
+    _selectedTravelMode = mode;
+    _applyRoute(route);
+    setState(() => _isLoadingRoute = false);
+
+    if (route == null) {
+      _mapController.move(destination, 15.5);
+    }
+  }
+
+  void _clearRoute() {
+    ref.read(routeProvider.notifier).clearRoute();
+    setState(() {
+      _routePoints = [];
+      _routeDistanceKm = null;
+      _routeDurationMin = null;
+      _routeDestination = null;
+    });
+  }
+
+  void _applyRoute(RouteResult? route) {
+    if (route == null) {
+      setState(() {
+        _routePoints = [];
+        _routeDistanceKm = null;
+        _routeDurationMin = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _routePoints = route.points;
+      _routeDistanceKm = route.distanceKm;
+      _routeDurationMin = route.durationMin;
+      _selectedTravelMode = route.mode;
+    });
+
+    if (route.points.isEmpty) return;
+    final lats = route.points.map((point) => point.latitude).toList()..sort();
+    final lngs = route.points.map((point) => point.longitude).toList()..sort();
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds(
+          LatLng(lats.first, lngs.first),
+          LatLng(lats.last, lngs.last),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 80),
+      ),
+    );
+  }
+
+  Future<void> _showTravelModeSheet() async {
+    final destination = _routeDestination;
+    if (destination == null) return;
+    if (_userLocation == null) await _getUserLocation();
+    final start = _userLocation ??
+        const LatLng(AppConstants.defaultLat, AppConstants.defaultLng);
+
+    setState(() => _isLoadingRoute = true);
+    await ref.read(routeProvider.notifier).fetchAllPreviews(
+          start: start,
+          destination: destination,
+        );
+    if (!mounted) return;
+    setState(() => _isLoadingRoute = false);
+    _applyRoute(ref.read(routeProvider).activeRoute);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      builder: (sheetContext) {
+        return Consumer(
+          builder: (context, ref, child) {
+            final routeState = ref.watch(routeProvider);
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: TravelMode.values.map((mode) {
+                    final preview = routeState.previews[mode];
+                    final selected = routeState.selectedMode == mode;
+                    return ListTile(
+                      leading: Icon(
+                        mode == TravelMode.walking
+                            ? Icons.directions_walk
+                            : mode == TravelMode.cycling
+                                ? Icons.pedal_bike_outlined
+                                : Icons.directions_car_outlined,
+                        color: AppColors.primary,
+                      ),
+                      title: Text(
+                        mode.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        preview == null
+                            ? 'Route unavailable'
+                            : '${preview.distanceKm.toStringAsFixed(1)} km · ${preview.durationMin.toStringAsFixed(0)} min',
+                      ),
+                      trailing: selected
+                          ? const Icon(Icons.check, color: AppColors.primary)
+                          : null,
+                      onTap: preview == null
+                          ? null
+                          : () {
+                              ref.read(routeProvider.notifier).selectMode(mode);
+                              _applyRoute(ref.read(routeProvider).activeRoute);
+                              Navigator.pop(sheetContext);
+                            },
+                    );
+                  }).toList(),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -133,6 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _mapFetchDebounce?.cancel();
     _suggestionDebounce?.cancel();
     _searchController.dispose();
+    _mapStyle?.dispose();
     super.dispose();
   }
 
@@ -450,10 +666,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPositionChanged: _onMapPositionChanged,
             ),
             children: [
-              TileLayer(
-                urlTemplate: AppConstants.osmTileUrl,
-                userAgentPackageName: 'com.rentalmarket.tenant.tenant_app',
+              if (_mapStyle == null)
+                TileLayer(
+                  urlTemplate: AppConstants.osmFallbackUrl,
+                  userAgentPackageName: 'com.rentalmarket.tenant.tenant_app',
+                )
+              else
+                vt.VectorTileLayer(
+                  theme: _mapStyle!.theme,
+                  tileProviders: _mapStyle!.providers,
+                  rasterSources: _mapStyle!.rasterSources,
+                  sprites: _mapStyle!.sprites,
+                ),
+              const SimpleAttributionWidget(
+                source: Text('OpenFreeMap · OpenStreetMap'),
               ),
+              if (_routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routePoints,
+                      strokeWidth: 5.0,
+                      color: AppColors.primary,
+                      borderStrokeWidth: 2.0,
+                      borderColor: AppColors.white,
+                    ),
+                  ],
+                ),
+              if (_userLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _userLocation!,
+                      width: 24,
+                      height: 24,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.locationPulse,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.white, width: 3),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: _trafficIncidents.map((incident) {
                   return Marker(
@@ -464,7 +727,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       message: incident.label,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade700,
+                          color: AppColors.gray700,
                           shape: BoxShape.circle,
                           border: Border.all(color: AppColors.white, width: 2),
                         ),
@@ -656,6 +919,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
+            ),
+
+          // Route calculation loading
+          if (_isLoadingRoute)
+            Positioned(
+              top: 100,
+              left: 20,
+              right: 20,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.white),
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Calculating optimal driving route...',
+                        style: TextStyle(color: AppColors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Route Details Banner (When route points are active)
+          if (_routePoints.isNotEmpty && _routeDistanceKm != null)
+            Positioned(
+              top: 80,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4)),
+                  ],
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    InkWell(
+                      onTap: _showTravelModeSheet,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _selectedTravelMode == TravelMode.walking
+                            ? Icons.directions_walk
+                            : _selectedTravelMode == TravelMode.cycling
+                                ? Icons.pedal_bike_outlined
+                                : Icons.directions_car_rounded,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${_routeDistanceKm!.toStringAsFixed(1)} km · ${_routeDurationMin!.toStringAsFixed(0)} mins ${_selectedTravelMode.label.toLowerCase()}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'In-App Navigation Route',
+                            style: TextStyle(fontSize: 12, color: AppColors.gray500),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
+                      tooltip: 'Choose travel mode',
+                      onPressed: _showTravelModeSheet,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppColors.gray500, size: 20),
+                      tooltip: 'Clear Route',
+                      onPressed: _clearRoute,
+                    ),
+                  ],
                 ),
               ),
             ),

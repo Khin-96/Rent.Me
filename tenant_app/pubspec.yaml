@@ -1,7 +1,7 @@
 name: tenant_app
 description: The tenant map-based discovery app for Rent.ME.
 publish_to: 'none'
-version: 1.0.2+4
+version: 1.0.2+8
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -13,7 +13,8 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.3.5
   go_router: ^14.6.2
-  flutter_map: ^7.0.2
+  flutter_map: ^8.2.0
+  flutter_map_vector_tiles: ^2.6.2
   latlong2: ^0.9.1
   dio: ^5.7.0
   flutter_secure_storage: ^9.2.2

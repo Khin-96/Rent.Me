@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -16,6 +18,7 @@ class ThreadScreen extends ConsumerStatefulWidget {
 class _ThreadScreenState extends ConsumerState<ThreadScreen> {
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  Timer? _messagesPollTimer;
 
   @override
   void initState() {
@@ -23,10 +26,18 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(inboxProvider.notifier).fetchMessages(widget.inquiryId);
     });
+    _messagesPollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      ref.read(inboxProvider.notifier).fetchMessages(
+            widget.inquiryId,
+            showLoading: false,
+          );
+    });
   }
 
   @override
   void dispose() {
+    _messagesPollTimer?.cancel();
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();

@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../data/message_model.dart';
+import '../../data/inquiry_model.dart';
 import '../providers/inbox_provider.dart';
 
 class LandlordMessagesScreen extends ConsumerWidget {
@@ -20,10 +20,16 @@ class LandlordMessagesScreen extends ConsumerWidget {
         elevation: 0,
         centerTitle: false,
         title: const Text('Inbox', style: TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => ref.read(inboxProvider.notifier).fetchInbox(),
+          ),
+        ],
       ),
-      body: state.isLoading
+      body: state.isLoading && state.inquiries.isEmpty
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : state.error != null
+          : state.error != null && state.inquiries.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -36,7 +42,7 @@ class LandlordMessagesScreen extends ConsumerWidget {
                     ],
                   ),
                 )
-              : state.threads.isEmpty
+              : state.inquiries.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -69,12 +75,12 @@ class LandlordMessagesScreen extends ConsumerWidget {
                       onRefresh: () => ref.read(inboxProvider.notifier).fetchInbox(),
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
-                        itemCount: state.threads.length,
+                        itemCount: state.inquiries.length,
                         itemBuilder: (context, index) {
-                          final thread = state.threads[index];
-                          return _ThreadCard(thread: thread)
-                              .animate(delay: Duration(milliseconds: index * 50))
-                              .slideY(begin: 0.1, duration: 300.ms)
+                          final inquiry = state.inquiries[index];
+                          return _InquiryCard(inquiry: inquiry)
+                              .animate(delay: Duration(milliseconds: index * 40))
+                              .slideY(begin: 0.1, duration: 250.ms)
                               .fadeIn();
                         },
                       ),
@@ -83,53 +89,112 @@ class LandlordMessagesScreen extends ConsumerWidget {
   }
 }
 
-class _ThreadCard extends StatelessWidget {
-  final ThreadSummary thread;
-  const _ThreadCard({required this.thread});
+class _InquiryCard extends StatelessWidget {
+  final InquiryModel inquiry;
+  const _InquiryCard({required this.inquiry});
 
   @override
   Widget build(BuildContext context) {
-    final initials = thread.otherUserName.isNotEmpty
-        ? thread.otherUserName.trim().split(' ').take(2).map((n) => n[0].toUpperCase()).join()
+    final tenantName = inquiry.tenant?.name ?? 'Tenant';
+    final initials = tenantName.isNotEmpty
+        ? tenantName.trim().split(' ').take(2).map((n) => n[0].toUpperCase()).join()
         : '?';
+    final lastMsg = inquiry.messages.isNotEmpty ? inquiry.messages.last : null;
+    final isUnread = !inquiry.isReadByLandlord;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [
+          BoxShadow(
+            color: isUnread ? AppColors.primary.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: isUnread ? Border.all(color: AppColors.primary.withValues(alpha: 0.3)) : null,
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         leading: CircleAvatar(
           radius: 24,
-          backgroundColor: AppColors.gray200,
-          child: Text(initials, style: const TextStyle(color: AppColors.gray700, fontWeight: FontWeight.w600)),
+          backgroundColor: isUnread ? AppColors.primary : AppColors.gray200,
+          backgroundImage: inquiry.tenant?.avatarUrl != null
+              ? NetworkImage(inquiry.tenant!.avatarUrl!)
+              : null,
+          child: inquiry.tenant?.avatarUrl == null
+              ? Text(
+                  initials,
+                  style: TextStyle(
+                    color: isUnread ? AppColors.white : AppColors.gray700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              : null,
         ),
-        title: Text(thread.otherUserName,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                tenantName,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: isUnread ? FontWeight.w800 : FontWeight.w700,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              '${inquiry.updatedAt.hour.toString().padLeft(2, '0')}:${inquiry.updatedAt.minute.toString().padLeft(2, '0')}',
+              style: TextStyle(
+                fontSize: 11,
+                color: isUnread ? AppColors.primary : AppColors.gray400,
+                fontWeight: isUnread ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (thread.propertyTitle != null) ...[
-              const SizedBox(height: 2),
-              Text(thread.propertyTitle!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.primary, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+            if (inquiry.property != null) ...[
+              const SizedBox(height: 3),
+              Text(
+                inquiry.property!.name,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
             const SizedBox(height: 4),
-            Text(thread.lastMessage,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.gray500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
+            Text(
+              lastMsg?.body ?? inquiry.subject,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: isUnread ? AppColors.gray900 : AppColors.gray500,
+                    fontWeight: isUnread ? FontWeight.w600 : FontWeight.normal,
+                  ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
-        onTap: () => context.push(
-            '/messages/${thread.otherUserId}?propertyId=${thread.propertyId ?? ""}'),
-        trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.gray300, size: 20),
+        trailing: isUnread
+            ? Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : const Icon(Icons.chevron_right_rounded, color: AppColors.gray300, size: 20),
+        onTap: () => context.push('/messages/${inquiry.id}'),
       ),
     );
   }
